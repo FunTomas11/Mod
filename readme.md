@@ -1,8 +1,6 @@
 Krainiev mod (Under development)
 =================
 E-cigarette battery project
------------------
-
 
 
 ### What it is?
