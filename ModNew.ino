@@ -1,26 +1,26 @@
 
-#define initial_calibration 0 // калибровка вольтметра 1 - включить, 0 - выключить
-#define welcome 1							// приветствие (слова GYVER VAPE при включении), 1 - включить, 0 - выключить
+#define initial_calibration 0
+#define welcome 1
 
-#define sleep_timer 10		// таймер сна в секундах
-#define vape_threshold 4	// отсечка затяжки, в секундах
-#define turbo_mode 1			// турбо режим 1 - включить, 0 - выключить
-#define battery_percent 0 // отображать заряд в процентах, 1 - включить, 0 - выключить
-#define battery_low 2.8		// нижний порог срабатывания защиты от переразрядки аккумулятора, в Вольтах!
+#define sleep_timer 10	 // in seconds
+#define vape_threshold 4 // in seconds
+#define turbo_mode 1
+#define battery_percent 0 // display welcome image
+#define battery_low 2.8		// battery protection, volts
 #define resistance 0.3		// Resistance of coil
-//-----------------------------------НАСТРОЙКИ------------------------------------
+//-----------------------------------settings------------------------------------
 
-#include <EEPROMex.h> // библиотека для работы со внутренней памятью ардуино
-#include <LowPower.h> // библиотека сна
+#include <EEPROMex.h>
+#include <LowPower.h>
 #include <TimerOne.h>
 
-//-----------кнопки-----------
-#define butt_up 3		// кнопка вверх
-#define butt_down 4 // кнпока вниз
-#define butt_vape 2 // кнопка "парить"
-//-----------кнопки-----------
+//-----------buttons-----------
+#define butt_up 3
+#define butt_down 4
+#define butt_vape 2 /
+//-----------buttons-----------
 
-//-----------флажки-----------
+//-----------flags-----------
 boolean up_state, down_state, vape_state; // стан кнопки
 boolean up_flag, down_flag, vape_btt, vape_btt_f;
 volatile boolean wake_up_flag, vape_flag;
@@ -29,31 +29,31 @@ boolean flag; // флаг, разрешающий подать ток на ко�
 int battery_state;
 String value;
 
-//-----------флажки-----------
+//-----------flags-----------
 
-//-----------пины-------------
-#define mosfet 10 // пин мосфета (нагрев спирали)
-#define battery 3 // пин измерения напряжения акума
-//-----------пины-------------
+//-----------pins-------------
+#define mosfet 10 // coil pin
+#define battery 3 // pin voltage measure
+//-----------pins-------------
 
-//-----------дисплей-----------
+//-----------display-----------
 #include "U8glib.h"
 U8GLIB_SSD1306_128X64 u8g(U8G_I2C_OPT_NONE | U8G_I2C_OPT_DEV_0); // I2C / TWI
-//-----------дисплей-----------
+//-----------display-----------
 
-int bat_vol, bat_volt_f; // хранит напряжение на акуме
-int PWM, PWM_f;					 // хранит PWM сигнал
+int bat_vol, bat_volt_f;
+int PWM, PWM_f;
 
-//-------переменные и коэффициенты для фильтра-------
+//-------filter variables-------
 int bat_old, PWM_old = 800;
 float filter_k = 0.04;
 float PWM_filter_k = 0.1;
-//-------переменные и коэффициенты для фильтра-------
+//-------filter variables-------
 
-unsigned long last_time, vape_press, last_vape, wake_timer; // таймеры
-int volts, watts;																						// храним вольты и ватты
-float ohms;																									// храним омы
-float my_vcc_const;																					// константа вольтметра
+unsigned long last_time, vape_press, last_vape, wake_timer; // timers
+int volts, watts;
+float ohms;
+float my_vcc_const;
 volatile byte vape_mode, vape_release_count;
 
 const unsigned char vapeBitmap[] PROGMEM = {
@@ -127,53 +127,45 @@ void setup()
 {
 	Serial.begin(9600);
 	if (initial_calibration)
-		calibration(); // калибровка, если разрешена
+		calibration();
 
-	//----читаем из памяти-----
 	volts = EEPROM.readInt(0);
 	watts = EEPROM.readInt(2);
 	ohms = resistance;
 	my_vcc_const = EEPROM.readFloat(8);
-	//----читаем из памяти-----
 
-	Timer1.initialize(1500); // таймер
+	Timer1.initialize(1500);
 
-	//---настройка кнопок и выходов-----
 	pinMode(butt_up, INPUT_PULLUP);
 	pinMode(butt_down, INPUT_PULLUP);
 	pinMode(butt_vape, INPUT_PULLUP);
 	pinMode(mosfet, OUTPUT);
-	Timer1.disablePwm(mosfet); // принудительно отключить койл
-	digitalWrite(mosfet, LOW); // принудительно отключить койл
+	Timer1.disablePwm(mosfet);
+	digitalWrite(mosfet, LOW);
 	u8g.getMode() == U8G_MODE_BW;
 	u8g.setColorIndex(1);
 	u8g.setRot270();
-	//---настройка кнопок и выходов-----
 
-	//------приветствие-----
 	if (welcome)
 	{
 		clearScreen();
-		u8g.firstPage(); // Привітання
+		u8g.firstPage();
 		do
 		{
 			u8g.drawBitmapP(0, 0, 8, 128, vapeBitmap);
 		} while (u8g.nextPage());
 		delay(1000);
 	}
-	//------приветствие-----
 
-	// измерить напряжение аккумулятора
 	bat_vol = readVcc();
 	bat_old = bat_vol;
 
-	// проверка заряда акума, если разряжен то прекратить работу
+	// battery voltage protection
 	if (bat_vol < battery_low * 1000)
 	{
 		flag = 0;
 		// battery low display func
-		Timer1.disablePwm(mosfet); // принудительно отключить койл
-		digitalWrite(mosfet, LOW); // принудительно отключить койл
+		Timer1.disablePwm(mosfet);
 	}
 	else
 	{
@@ -184,44 +176,42 @@ void setup()
 void loop()
 {
 	if (millis() - last_time > 50)
-	{ // 20 раз в секунду измеряем напряжение
+	{
 		last_time = millis();
-		bat_vol = readVcc();																				// измерить напряжение аккумулятора в миллиВольтах
-		bat_volt_f = filter_k * bat_vol + (1 - filter_k) * bat_old; // фильтруем
-		bat_old = bat_volt_f;																				// фильтруем
+		bat_vol = readVcc();
+		bat_volt_f = filter_k * bat_vol + (1 - filter_k) * bat_old;
+		bat_old = bat_volt_f;
 		if (bat_volt_f < battery_low * 1000)
-		{						// если напряжение меньше минимального
-			flag = 0; // прекратить работу
+		{
+			flag = 0;
 			// battery low function
-			Timer1.disablePwm(mosfet); // принудительно отключить койл
-			digitalWrite(mosfet, LOW); // принудительно отключить койл
+			Timer1.disablePwm(mosfet);
+			digitalWrite(mosfet, LOW);
 		}
 	}
 
-	//-----------опрос кнопок-----------
+	//-----------Button listeners-----------
 	up_state = !digitalRead(butt_up);
 	down_state = !digitalRead(butt_down);
 	vape_state = !digitalRead(butt_vape);
 
-	// если нажата любая кнопка, "продлить" таймер ухода в сон
+	// if any button pressed uptime sleep timer
 	if (up_state || down_state || vape_state)
 		wake_timer = millis();
-	//-----------опрос кнопок-----------
+	//-----------Button listeners-----------
 
-	//   service_mode();  // раскомментировать для отладки кнопок
-	// показывает, какие кнопки нажаты или отпущены
-	// использовать для проерки правильности подключения
+	//   service_mode(); //mode for buttons debugging
 
-	// ------------------режим ВАРИВАТТ-------------------
+	// ------------------VariWatt-------------------
 	if (!vape_state)
 	{
 
-		//---------кнопка ВВЕРХ--------
+		//---------Up button--------
 		if (up_state && !up_flag)
 		{
 			watts += 1;
 			byte maxW = (sq((float)bat_volt_f / 1000)) / ohms;
-			watts = min(watts, maxW); // ограничение сверху на текущий заряд акума и сопротивление
+			watts = min(watts, maxW); //max voltage limit
 			up_flag = 1;
 			//disp.clear();
 		}
@@ -230,9 +220,9 @@ void loop()
 			up_flag = 0;
 			change_w_flag = 1;
 		}
-		//---------кнопка ВВЕРХ--------
+		//---------Up button--------
 
-		//---------кнопка ВНИЗ--------
+		//---------DOWN button--------
 		if (down_state && !down_flag)
 		{
 			watts -= 1;
@@ -248,32 +238,32 @@ void loop()
 
 		value = String(watts) + "W";
 	}
-	// ------------------режим ВАРИВАТТ--------------
+	// ------------------VariWatt--------------
 
-	//---------отработка нажатия кнопки парения-----------
+	//---------Vape button-----------
 	if (vape_state && flag && !wake_up_flag)
 	{
 
 		if (!vape_flag)
 		{
 			vape_flag = 1;
-			vape_mode = 1;				 // первичное нажатие
-			delay(20);						 // анти дребезг (сделал по-тупому, лень)
-			vape_press = millis(); // первичное нажатие
+			vape_mode = 1;
+			delay(20);
+			vape_press = millis();
 		}
 
 		if (vape_release_count == 1)
 		{
-			vape_mode = 2; // двойное нажатие
-			delay(20);		 // анти дребезг (сделал по-тупому, лень)
+			vape_mode = 2; // double click
+			delay(20);
 		}
 		if (vape_release_count == 2)
 		{
-			vape_mode = 3; // тройное нажатие
+			vape_mode = 3; // triple click
 		}
 
 		if (millis() - vape_press > vape_threshold * 1000)
-		{ // "таймер затяжки"
+		{
 			vape_mode = 0;
 			digitalWrite(mosfet, 0);
 		}
@@ -284,296 +274,285 @@ void loop()
 			vapingAnimation();
 			delay(1000);
 
-			Timer1.pwm(mosfet, PWM_f); // управление мосфетом
+			Timer1.pwm(mosfet, PWM_f);
 		}
 		if (vape_mode == 2 && turbo_mode)
-		{ // турбо режим парения (если включен)
+		{ // turbo mode
 			// display vape animation
 			clearScreen();
 			showText("Turbo!!");
 			delay(1000);
-			digitalWrite(mosfet, 1); // херачить на полную мощность
+			digitalWrite(mosfet, 1); //max power
+			if (vape_mode == 3)
+			{
+				vape_release_count = 0;
+				vape_mode = 1;
+				vape_flag = 0;
+				showText("Sleep!");
+				delay(1000);
+				good_night();
+			}
+			vape_btt = 1;
 		}
-		if (vape_mode == 3)
-		{ // тройное нажатие
-			vape_release_count = 0;
-			vape_mode = 1;
-			vape_flag = 0;
-			showText("Sleep!");
+
+		if (!vape_state && vape_btt)
+		{ //
+			if (millis() - vape_press > 180)
+			{
+				vape_release_count = 0;
+				vape_mode = 0;
+				vape_flag = 0;
+			}
+			vape_btt = 0;
+			if (vape_mode == 1)
+			{
+				vape_release_count = 1;
+				vape_press = millis();
+			}
+			if (vape_mode == 2)
+				vape_release_count = 2;
+
+			digitalWrite(mosfet, 0);
+			clearScreen();
+
+			// if any changes, write to memory
+			if (change_v_flag)
+			{
+				EEPROM.writeInt(0, volts);
+				change_v_flag = 0;
+			}
+			if (change_w_flag)
+			{
+				EEPROM.writeInt(2, watts);
+				change_w_flag = 0;
+			}
+			//if any changes, write to memory
+		}
+		if (vape_state && !flag)
+		{
+			//low battery animation
 			delay(1000);
-			good_night(); // вызвать функцию сна
+			vape_flag = 1;
 		}
-		vape_btt = 1;
+		//---------VAPE button-----------
+
+		if (wake_up_flag)
+			wake_puzzle();
+
+		if (millis() - wake_timer > sleep_timer * 1000)
+		{
+			good_night();
+		}
+
+		battery_state = map(bat_vol, 2800, 4250, 0, 19);
+		// picture loop
+		u8g.firstPage();
+		do
+		{
+			draw(battery_state);
+
+		} while (u8g.nextPage());
 	}
 
-	if (!vape_state && vape_btt)
-	{ // если кнопка ПАРИТЬ отпущена
-		if (millis() - vape_press > 180)
-		{
-			vape_release_count = 0;
-			vape_mode = 0;
-			vape_flag = 0;
-		}
-		vape_btt = 0;
-		if (vape_mode == 1)
-		{
-			vape_release_count = 1;
-			vape_press = millis();
-		}
-		if (vape_mode == 2)
-			vape_release_count = 2;
-
-		digitalWrite(mosfet, 0);
-		clearScreen();
-
-		// если есть изменения в настройках, записать в память
-		if (change_v_flag)
-		{
-			EEPROM.writeInt(0, volts);
-			change_v_flag = 0;
-		}
-		if (change_w_flag)
-		{
-			EEPROM.writeInt(2, watts);
-			change_w_flag = 0;
-		}
-		// если есть изменения в настройках, записать в память
-	}
-	if (vape_state && !flag)
-	{ // если акум сел, а мы хотим подымить
-		//low battery animation
-		delay(1000);
-		vape_flag = 1;
-	}
-	//---------отработка нажатия кнопки парения-----------
-
-	if (wake_up_flag)
-		wake_puzzle(); // вызвать функцию 5 нажатий для пробудки
-
-	if (millis() - wake_timer > sleep_timer * 1000)
-	{ // если кнопки не нажимались дольше чем sleep_timer секунд
-		good_night();
-	}
-
-	battery_state = map(bat_vol, 2800, 4250, 0, 19);
-	// picture loop
-	u8g.firstPage();
-	do
+	void wake_up()
 	{
-		draw(battery_state);
+		Timer1.disablePwm(mosfet);
+		digitalWrite(mosfet, LOW);
+		wake_timer = millis();
+		wake_up_flag = 1;
+		vape_release_count = 0;
+		vape_mode = 0;
+		vape_flag = 0;
+	}
 
-	} while (u8g.nextPage());
-}
-
-void wake_up()
-{
-	Timer1.disablePwm(mosfet); // принудительно отключить койл
-	digitalWrite(mosfet, LOW); // принудительно отключить койл
-	wake_timer = millis();		 // запомнить время пробуждения
-	wake_up_flag = 1;
-	vape_release_count = 0;
-	vape_mode = 0;
-	vape_flag = 0;
-}
-//------функция, вызываемая при выходе из сна (прерывание)------
-
-//------функция 5 нажатий для полного пробуждения------
-void wake_puzzle()
-{
-	detachInterrupt(0); // отключить прерывание
-	vape_btt_f = 0;
-	boolean wake_status = 0;
-	byte click_count = 0;
-	while (1)
+	void wake_puzzle() // interruption function
 	{
-		vape_state = !digitalRead(butt_vape);
-
-		if (vape_state && !vape_btt_f)
+		detachInterrupt(0);
+		vape_btt_f = 0;
+		boolean wake_status = 0;
+		byte click_count = 0;
+		while (1)
 		{
-			vape_btt_f = 1;
-			click_count++;
-			if (click_count > 4)
-			{									 // если 5 нажатий сделаны за 3 секунды
-				wake_status = 1; // флаг "проснуться"
-				u8g.sleepOff();
-				clearScreen();
-				u8g.firstPage();
-				do
+			vape_state = !digitalRead(butt_vape);
+
+			if (vape_state && !vape_btt_f)
+			{
+				vape_btt_f = 1;
+				click_count++;
+				if (click_count > 4)
 				{
-					u8g.setPrintPos(19, 70);
-					u8g.print("Hi");
-				} while (u8g.nextPage());
+					wake_status = 1;
+					u8g.sleepOff();
+					clearScreen();
+					u8g.firstPage();
+					do
+					{
+						u8g.setPrintPos(19, 70);
+						u8g.print("Hi");
+					} while (u8g.nextPage());
 
-				delay(500);
+					delay(500);
+					break;
+				}
+			}
+			if (!vape_state && vape_btt_f)
+			{
+				vape_btt_f = 0;
+				delay(70);
+			}
+			if (millis() - wake_timer > 3000)
+			{
+				wake_status = 0;
 				break;
 			}
 		}
-		if (!vape_state && vape_btt_f)
+		if (wake_status)
 		{
-			vape_btt_f = 0;
-			delay(70);
+			wake_up_flag = 0;
+			delay(100);
 		}
-		if (millis() - wake_timer > 3000)
-		{									 // если 5 нажатий не сделаны за 3 секунды
-			wake_status = 0; // флаг "спать"
-			break;
+		else
+			good_night();
+	}
+
+	void good_night()
+	{
+		clearScreen();
+
+		u8g.firstPage(); // farewell
+		do
+		{
+			u8g.setFont(u8g_font_unifont);
+			u8g.setPrintPos(19, 70);
+			u8g.print("Bye!");
+		} while (u8g.nextPage());
+
+		delay(500);
+
+		Timer1.disablePwm(mosfet);
+		digitalWrite(mosfet, LOW);
+		delay(50);
+		attachInterrupt(0, wake_up, FALLING);
+		delay(50);
+		u8g.sleepOn();
+		LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF);
+	}
+
+	void service_mode()
+	{
+		if (up_state && !up_flag)
+		{
+			up_flag = 1;
+			Serial.println("UP pressed");
+		}
+		if (!up_state && up_flag)
+		{
+			up_flag = 0;
+			Serial.println("UP released");
+		}
+		if (down_state && !down_flag)
+		{
+			down_flag = 1;
+			Serial.println("DOWN pressed");
+		}
+		if (!down_state && down_flag)
+		{
+			down_flag = 0;
+			Serial.println("DOWN released");
+		}
+		if (vape_state && !vape_flag)
+		{
+			vape_flag = 1;
+			Serial.println("VAPE pressed");
+		}
+		if (!vape_state && vape_flag)
+		{
+			vape_flag = 0;
+			Serial.println("VAPE released");
 		}
 	}
-	if (wake_status)
-	{
-		wake_up_flag = 0;
-		delay(100);
-	}
-	else
-		good_night(); // спать
-}
-//------функция 5 нажатий для полного пробуждения------
 
-//-------------функция ухода в сон----------------
-void good_night()
-{
-	clearScreen();
-
-	u8g.firstPage(); // Прощання
-	do
+	void calibration()
 	{
-		u8g.setFont(u8g_font_unifont);
-		u8g.setPrintPos(19, 70);
-		u8g.print("Bye!");
-	} while (u8g.nextPage());
-
-	delay(500);
-
-	Timer1.disablePwm(mosfet); // принудительно отключить койл
-	digitalWrite(mosfet, LOW); // принудительно отключить койл
-	delay(50);
-	attachInterrupt(0, wake_up, FALLING); // подключить прерывание для пробуждения
-	delay(50);
-	u8g.sleepOn();																			 // подать 0 на все пины питания дисплея
-	LowPower.powerDown(SLEEP_FOREVER, ADC_OFF, BOD_OFF); // спать. mode POWER_OFF, АЦП выкл
-}
-//-------------функция ухода в сон----------------
-
-//----------режим теста кнопок----------
-void service_mode()
-{
-	if (up_state && !up_flag)
-	{
-		up_flag = 1;
-		Serial.println("UP pressed");
+		for (byte i = 0; i < 7; i++)
+			EEPROM.writeInt(i, 0);
+		my_vcc_const = 1.1;
+		Serial.print("Real VCC is: ");
+		Serial.println(readVcc());
+		Serial.println("Write your VCC (in millivolts)");
+		while (Serial.available() == 0)
+			;
+		int Vcc = Serial.parseInt();
+		float real_const = (float)1.1 * Vcc / readVcc();
+		Serial.print("New voltage constant: ");
+		Serial.println(real_const, 3);
+		EEPROM.writeFloat(8, real_const);
+		while (1)
 	}
-	if (!up_state && up_flag)
-	{
-		up_flag = 0;
-		Serial.println("UP released");
-	}
-	if (down_state && !down_flag)
-	{
-		down_flag = 1;
-		Serial.println("DOWN pressed");
-	}
-	if (!down_state && down_flag)
-	{
-		down_flag = 0;
-		Serial.println("DOWN released");
-	}
-	if (vape_state && !vape_flag)
-	{
-		vape_flag = 1;
-		Serial.println("VAPE pressed");
-	}
-	if (!vape_state && vape_flag)
-	{
-		vape_flag = 0;
-		Serial.println("VAPE released");
-	}
-}
-//----------режим теста кнопок----------
 
-void calibration()
-{
-	//--------калибровка----------
-	for (byte i = 0; i < 7; i++)
-		EEPROM.writeInt(i, 0); // чистим EEPROM для своих нужд
-	my_vcc_const = 1.1;
-	Serial.print("Real VCC is: ");
-	Serial.println(readVcc()); // общаемся с пользователем
-	Serial.println("Write your VCC (in millivolts)");
-	while (Serial.available() == 0)
-		;
-	int Vcc = Serial.parseInt();										 // напряжение от пользователя
-	float real_const = (float)1.1 * Vcc / readVcc(); // расчёт константы
-	Serial.print("New voltage constant: ");
-	Serial.println(real_const, 3);
-	EEPROM.writeFloat(8, real_const); // запись в EEPROM
-	while (1)
-		; // уйти в бесконечный цикл
-	//------конец калибровки-------
-}
-
-long readVcc()
-{ //функция чтения внутреннего опорного напряжения, универсальная (для всех ардуин)
+	long readVcc()
+	{
 #if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
-	ADMUX = _BV(REFS0) | _BV(MUX4) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
+		ADMUX = _BV(REFS0) | _BV(MUX4) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
 #elif defined(__AVR_ATtiny24__) || defined(__AVR_ATtiny44__) || defined(__AVR_ATtiny84__)
-	ADMUX = _BV(MUX5) | _BV(MUX0);
+		ADMUX = _BV(MUX5) | _BV(MUX0);
 #elif defined(__AVR_ATtiny25__) || defined(__AVR_ATtiny45__) || defined(__AVR_ATtiny85__)
-	ADMUX = _BV(MUX3) | _BV(MUX2);
+		ADMUX = _BV(MUX3) | _BV(MUX2);
 #else
-	ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
+		ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
 #endif
-	delay(2);						 // Wait for Vref to settle
-	ADCSRA |= _BV(ADSC); // Start conversion
-	while (bit_is_set(ADCSRA, ADSC))
-		;									 // measuring
-	uint8_t low = ADCL;	 // must read ADCL first - it then locks ADCH
-	uint8_t high = ADCH; // unlocks both
-	long result = (high << 8) | low;
+		delay(2);						 // Wait for Vref to settle
+		ADCSRA |= _BV(ADSC); // Start conversion
+		while (bit_is_set(ADCSRA, ADSC))
+			;									 // measuring
+		uint8_t low = ADCL;	 // must read ADCL first - it then locks ADCH
+		uint8_t high = ADCH; // unlocks both
+		long result = (high << 8) | low;
 
-	result = my_vcc_const * 1023 * 1000 / result; // расчёт реального VCC
-	return result;																// возвращает VCC
-}
+		result = my_vcc_const * 1023 * 1000 / result; // расчёт реального VCC
+		return result;																// возвращает VCC
+	}
 
-//=====================
+	//=====================
 
-void draw(int battery_state)
-{
-	// graphic commands to redraw the complete screen should be placed here
-	u8g.setFont(u8g_font_unifont);
-
-	//u8g.setFont(u8g_font_osb21);
-	u8g.drawFrame(3, 3, 23, 8);
-	u8g.drawBox(5, 5, battery_state, 4);
-	u8g.drawBox(26, 5, 2, 3);
-	u8g.drawCircle(30, 64, 21);
-	u8g.setPrintPos(19, 70);
-	u8g.print(value);
-}
-
-void clearScreen()
-{
-	u8g.firstPage();
-	do
+	void draw(int battery_state)
 	{
-	} while (u8g.nextPage());
-}
+		// graphic commands to redraw the complete screen should be placed here
+		u8g.setFont(u8g_font_unifont);
 
-void showText(String text)
-{
-	u8g.firstPage();
-	do
+		//u8g.setFont(u8g_font_osb21);
+		u8g.drawFrame(3, 3, 23, 8);
+		u8g.drawBox(5, 5, battery_state, 4);
+		u8g.drawBox(26, 5, 2, 3);
+		u8g.drawCircle(30, 64, 21);
+		u8g.setPrintPos(19, 70);
+		u8g.print(value);
+	}
+
+	void clearScreen()
 	{
-		u8g.print(text);
-	} while (u8g.nextPage());
-}
+		u8g.firstPage();
+		do
+		{
+		} while (u8g.nextPage());
+	}
 
-void vapingAnimation()
-{
-	int temp = 0;
-	u8g.firstPage();
-	do
+	void showText(String text)
 	{
+		u8g.firstPage();
+		do
+		{
+			u8g.print(text);
+		} while (u8g.nextPage());
+	}
 
-		u8g.print("Vaping " + String(temp));
-	} while (u8g.nextPage());
-}
+	void vapingAnimation()
+	{
+		int temp = 0;
+		u8g.firstPage();
+		do
+		{
+
+			u8g.print("Vaping " + String(temp));
+		} while (u8g.nextPage());
+	}
